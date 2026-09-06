@@ -2,8 +2,9 @@ import { FileSystemPort } from './port';
 import { FileNode } from '@/types';
 import { normalizePath } from '@/utils/path';
 
-export class MemoryFsAdapter implements FileSystemPort {
+export class InMemoryFsAdapter implements FileSystemPort {
   private files: Map<string, string> = new Map();
+  private folders: Set<string> = new Set();
   private watchers: Set<(path: string) => void> = new Set();
 
   constructor(initialFiles?: Record<string, string>) {
@@ -120,15 +121,28 @@ export class MemoryFsAdapter implements FileSystemPort {
     this.notify(key);
   }
 
+  async createFolder(folderPath: string): Promise<void> {
+    const key = this.normalize(folderPath);
+    this.folders.add(key);
+    this.notify(key);
+  }
+
   async deleteFile(filePath: string): Promise<void> {
     const key = this.resolveKey(filePath) || this.normalize(filePath);
     this.files.delete(key);
+    this.folders.delete(key);
     this.notify(key);
   }
 
   async renameFile(oldPath: string, newPath: string): Promise<void> {
     const oldKey = this.resolveKey(oldPath);
     if (!oldKey) {
+      if (this.folders.has(this.normalize(oldPath))) {
+        this.folders.delete(this.normalize(oldPath));
+        this.folders.add(this.normalize(newPath));
+        this.notify(this.normalize(newPath));
+        return;
+      }
       throw new Error(`File not found: ${oldPath}`);
     }
     const content = this.files.get(oldKey)!;
@@ -142,9 +156,16 @@ export class MemoryFsAdapter implements FileSystemPort {
     const normRoot = this.normalize(rootPath);
     const nodes: FileNode[] = [];
 
-    for (const [filePath] of this.files) {
-      if (filePath.startsWith(normRoot)) {
-        const relative = filePath.slice(normRoot.length).replace(/^\/+/, '');
+    // All paths including files and explicit folders
+    const allPaths: Array<{ path: string; isDir: boolean }> = [
+      ...Array.from(this.files.keys()).map((p) => ({ path: p, isDir: false })),
+      ...Array.from(this.folders.values()).map((p) => ({ path: p, isDir: true })),
+    ];
+
+    for (const item of allPaths) {
+      if (item.path.startsWith(normRoot)) {
+        const relative = item.path.slice(normRoot.length).replace(/^\/+/, '');
+        if (!relative) continue;
         const parts = relative.split('/');
 
         let currentLevel = nodes;
@@ -152,7 +173,8 @@ export class MemoryFsAdapter implements FileSystemPort {
 
         for (let i = 0; i < parts.length; i++) {
           const part = parts[i];
-          const isFile = i === parts.length - 1;
+          const isTarget = i === parts.length - 1;
+          const isFile = isTarget && !item.isDir;
           currentPath = currentPath ? `${currentPath}/${part}` : part;
 
           let existing = currentLevel.find((n) => n.name === part);
@@ -186,3 +208,6 @@ export class MemoryFsAdapter implements FileSystemPort {
     }
   }
 }
+
+// Backwards compatibility alias
+export const MemoryFsAdapter = InMemoryFsAdapter;

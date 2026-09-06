@@ -1,19 +1,19 @@
-﻿export function normalizePath(p: string): string {
-  return p.replace(/\\/g, '/').replace(/^\/+/, '');
+export function normalizePath(pathInput: string): string {
+  return pathInput.replace(/\\/g, '/').replace(/^\/+/, '');
 }
 
-export function getFilename(p: string): string {
-  const norm = normalizePath(p);
+export function getFilename(pathInput: string): string {
+  const norm = normalizePath(pathInput);
   return norm.split('/').pop() || norm;
 }
 
-export function getBasename(p: string): string {
-  const filename = getFilename(p);
+export function getBasename(pathInput: string): string {
+  const filename = getFilename(pathInput);
   return filename.replace(/\.(md|markdown|txt)$/i, '');
 }
 
-export function getDirname(p: string): string {
-  const norm = normalizePath(p);
+export function getDirname(pathInput: string): string {
+  const norm = normalizePath(pathInput);
   const parts = norm.split('/');
   if (parts.length <= 1) return '';
   return parts.slice(0, -1).join('/');
@@ -21,7 +21,7 @@ export function getDirname(p: string): string {
 
 export function joinPath(...parts: string[]): string {
   return parts
-    .map((p) => p.replace(/\\/g, '/').replace(/^\/+|\/+$/g, ''))
+    .map((part) => part.replace(/\\/g, '/').replace(/^\/+|\/+$/g, ''))
     .filter(Boolean)
     .join('/');
 }

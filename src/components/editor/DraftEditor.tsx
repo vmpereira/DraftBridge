@@ -403,7 +403,17 @@ export const DraftEditor: React.FC<DraftEditorProps> = ({
             className="flex items-center gap-2.5 w-full rounded-md px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800 text-left transition-colors"
           >
             <Quote className="h-4 w-4 text-indigo-400" />
-            <span>Quote</span>
+            <span>Callout / Quote</span>
+          </button>
+          <button
+            onClick={() => {
+              editor.chain().focus().deleteRange({ from: editor.state.selection.from - 1, to: editor.state.selection.from }).setHorizontalRule().run();
+              setSlashMenuOpen(false);
+            }}
+            className="flex items-center gap-2.5 w-full rounded-md px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800 text-left transition-colors"
+          >
+            <Minus className="h-4 w-4 text-indigo-400" />
+            <span>Divider</span>
           </button>
           <button
             onClick={() => {

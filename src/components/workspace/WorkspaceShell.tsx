@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { FileSystemPort } from '@/modules/storage/port';
 import { ElectronIpcAdapter } from '@/modules/storage/electron-adapter';
-import { MemoryFsAdapter } from '@/modules/storage/memory-adapter';
+import { InMemoryFsAdapter } from '@/modules/storage/memory-adapter';
 import { NoteCodec } from '@/modules/codec';
 import { WikiLinkResolver } from '@/modules/resolver';
 import { PropertiesBanner } from '@/components/properties/PropertiesBanner';
@@ -20,7 +20,7 @@ import { DraftEditor } from '@/components/editor/DraftEditor';
 import { FileNode, OpenTab } from '@/types';
 import { normalizePath, getFilename, getBasename, getDirname, joinPath } from '@/utils/path';
 import { TabBar } from './TabBar';
-import { ExplorerView } from './ExplorerView';
+import { ExplorerView, FileOperations } from './ExplorerView';
 import { SearchPanel } from './SearchPanel';
 import { TagsPanel } from './TagsPanel';
 import { QuickOpenModal } from './QuickOpenModal';
@@ -31,7 +31,7 @@ export const WorkspaceShell: React.FC = () => {
     if (typeof window !== 'undefined' && window.electronAPI) {
       return new ElectronIpcAdapter();
     }
-    return new MemoryFsAdapter({
+    return new InMemoryFsAdapter({
       'notes/Welcome.md': `---
 title: Welcome to DraftBridge
 tags: [getting-started, documentation]
@@ -285,13 +285,34 @@ Try adding your own notes in the sidebar.
     const filename = `${cleanTitle}.md`;
     const fullPath = joinPath(targetFolder, filename);
 
-    const initialContent = `---\ntitle: ${cleanTitle}\ntags: []\n---\n# ${cleanTitle}\n\n`;
+    const initialContent = NoteCodec.encode({ title: cleanTitle, tags: [] }, `# ${cleanTitle}\n\n`);
     try {
       await storage.createFile(fullPath, initialContent);
       await refreshWorkspace();
       await openNote(fullPath);
     } catch (err) {
       alert(`Could not create file: ${err}`);
+    }
+  };
+
+  // Create new folder
+  const handleCreateFolder = async () => {
+    let targetFolder = workspacePath;
+    if (!targetFolder) {
+      const picked = await storage.openDialog('folder');
+      if (!picked) return;
+      targetFolder = picked;
+      setWorkspacePath(picked);
+    }
+
+    const folderName = prompt('Enter folder name:');
+    if (!folderName) return;
+    const fullPath = joinPath(targetFolder, folderName.trim());
+    try {
+      await storage.createFolder(fullPath);
+      await refreshWorkspace();
+    } catch (err) {
+      alert(`Could not create folder: ${err}`);
     }
   };
 
@@ -341,7 +362,7 @@ Try adding your own notes in the sidebar.
       }
 
       const newPath = joinPath(targetFolder, resolution.suggestedPath);
-      const initialContent = `---\ntitle: ${target}\ntags: []\n---\n# ${target}\n\n`;
+      const initialContent = NoteCodec.encode({ title: target, tags: [] }, `# ${target}\n\n`);
       try {
         await storage.createFile(newPath, initialContent);
         await refreshWorkspace();
@@ -467,13 +488,15 @@ Try adding your own notes in the sidebar.
                 : 'Tags'}
             </span>
             {sidebarTab === 'files' && (
-              <button
-                onClick={handleCreateNote}
-                className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
-                title="New Note"
-              >
-                <Plus className="h-4 w-4" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={handleCreateNote}
+                  className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                  title="New Note"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+              </div>
             )}
           </div>
 
@@ -484,11 +507,14 @@ Try adding your own notes in the sidebar.
                 workspacePath={workspacePath}
                 fileTree={fileTree}
                 activeFilePath={activeTab?.path}
-                onOpenFile={openNote}
+                operations={{
+                  onOpenFile: openNote,
+                  onRenameFile: handleRenameFile,
+                  onDeleteFile: handleDeleteFile,
+                }}
                 onOpenFolderDialog={handleOpenFolder}
                 onCreateNote={handleCreateNote}
-                onRenameFile={handleRenameFile}
-                onDeleteFile={handleDeleteFile}
+                onCreateFolder={handleCreateFolder}
               />
             )}
 

@@ -76,17 +76,33 @@ ipcMain.handle('fs:createFile', async (_event, filePath: string, initialContent 
   await fs.writeFile(filePath, initialContent, { flag: 'wx' });
 });
 
+ipcMain.handle('fs:createFolder', async (_event, folderPath: string) => {
+  await fs.mkdir(folderPath, { recursive: true });
+});
+
 ipcMain.handle('fs:deleteFile', async (_event, filePath: string) => {
-  await fs.unlink(filePath);
+  const stat = await fs.stat(filePath);
+  if (stat.isDirectory()) {
+    await fs.rm(filePath, { recursive: true, force: true });
+  } else {
+    await fs.unlink(filePath);
+  }
 });
 
 ipcMain.handle('fs:renameFile', async (_event, oldPath: string, newPath: string) => {
   await fs.rename(oldPath, newPath);
 });
 
-async function scanDirectory(dir: string): Promise<any[]> {
+interface FileNode {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  children?: FileNode[];
+}
+
+async function scanDirectory(dir: string): Promise<FileNode[]> {
   const entries = await fs.readdir(dir, { withFileTypes: true });
-  const nodes = [];
+  const nodes: FileNode[] = [];
 
   for (const entry of entries) {
     if (entry.name.startsWith('.')) continue; // ignore hidden folders like .git

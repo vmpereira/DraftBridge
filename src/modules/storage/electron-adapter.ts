@@ -8,6 +8,7 @@ declare global {
       readFile: (path: string) => Promise<string>;
       writeFile: (path: string, content: string) => Promise<void>;
       createFile: (path: string, initialContent?: string) => Promise<void>;
+      createFolder: (path: string) => Promise<void>;
       deleteFile: (path: string) => Promise<void>;
       renameFile: (oldPath: string, newPath: string) => Promise<void>;
       listTree: (rootPath: string) => Promise<FileNode[]>;
@@ -39,6 +40,11 @@ export class ElectronIpcAdapter implements FileSystemPort {
   async createFile(filePath: string, initialContent = ''): Promise<void> {
     if (!this.api) throw new Error('Electron API not available');
     return this.api.createFile(filePath, initialContent);
+  }
+
+  async createFolder(folderPath: string): Promise<void> {
+    if (!this.api) throw new Error('Electron API not available');
+    return this.api.createFolder(folderPath);
   }
 
   async deleteFile(filePath: string): Promise<void> {

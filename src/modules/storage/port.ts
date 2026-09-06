@@ -5,6 +5,7 @@ export interface FileSystemPort {
   readFile(path: string): Promise<string>;
   writeFile(path: string, content: string): Promise<void>;
   createFile(path: string, initialContent?: string): Promise<void>;
+  createFolder(path: string): Promise<void>;
   deleteFile(path: string): Promise<void>;
   renameFile(oldPath: string, newPath: string): Promise<void>;
   listTree(rootPath: string): Promise<FileNode[]>;

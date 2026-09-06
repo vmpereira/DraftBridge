@@ -57,13 +57,8 @@ export class WikiLinkResolver {
       }
     }
 
-    // Propose creation path
-    let suggested = `${linkText.trim()}.md`;
-    if (currentFilePath) {
-      const parentDir = currentFilePath.replace(/\\/g, '/').split('/').slice(0, -1).join('/');
-      suggested = parentDir ? `${parentDir}/${suggested}` : suggested;
-    }
-
+    // Propose creation path (relative to workspace/target directory)
+    const suggested = `${linkText.trim()}.md`;
     return { status: 'missing', suggestedPath: suggested };
   }
 

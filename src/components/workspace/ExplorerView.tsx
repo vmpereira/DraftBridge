@@ -12,34 +12,36 @@ import {
   FolderPlus,
 } from 'lucide-react';
 import { FileNode } from '@/types';
+import { joinPath, getDirname } from '@/utils/path';
+
+export interface FileOperations {
+  onOpenFile: (path: string) => void;
+  onRenameFile: (oldPath: string, newPath: string) => void;
+  onDeleteFile: (path: string) => void;
+}
 
 interface ExplorerViewProps {
   workspacePath: string | null;
   fileTree: FileNode[];
   activeFilePath?: string;
-  onOpenFile: (path: string) => void;
+  operations: FileOperations;
   onOpenFolderDialog: () => void;
   onCreateNote: () => void;
-  onRenameFile: (oldPath: string, newPath: string) => void;
-  onDeleteFile: (path: string) => void;
+  onCreateFolder?: () => void;
 }
 
 interface TreeNodeProps {
   node: FileNode;
   depth: number;
   activeFilePath?: string;
-  onOpenFile: (path: string) => void;
-  onRenameFile: (oldPath: string, newPath: string) => void;
-  onDeleteFile: (path: string) => void;
+  operations: FileOperations;
 }
 
 const TreeNode: React.FC<TreeNodeProps> = ({
   node,
   depth,
   activeFilePath,
-  onOpenFile,
-  onRenameFile,
-  onDeleteFile,
+  operations,
 }) => {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -49,17 +51,17 @@ const TreeNode: React.FC<TreeNodeProps> = ({
     const newName = prompt('Rename to:', currentName);
     if (!newName || newName === currentName) return;
 
-    const parts = node.path.replace(/\\/g, '/').split('/');
-    parts[parts.length - 1] = newName.endsWith('.md') || node.isDirectory ? newName : `${newName}.md`;
-    const newPath = parts.join('/');
-    onRenameFile(node.path, newPath);
+    const parentDir = getDirname(node.path);
+    const finalName = newName.endsWith('.md') || node.isDirectory ? newName : `${newName}.md`;
+    const newPath = joinPath(parentDir, finalName);
+    operations.onRenameFile(node.path, newPath);
   };
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
     const confirm = window.confirm(`Delete ${node.name}? This action cannot be undone.`);
     if (confirm) {
-      onDeleteFile(node.path);
+      operations.onDeleteFile(node.path);
     }
   };
 
@@ -99,9 +101,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
                 node={child}
                 depth={depth + 1}
                 activeFilePath={activeFilePath}
-                onOpenFile={onOpenFile}
-                onRenameFile={onRenameFile}
-                onDeleteFile={onDeleteFile}
+                operations={operations}
               />
             ))}
           </div>
@@ -115,7 +115,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
 
   return (
     <div
-      onClick={() => onOpenFile(node.path)}
+      onClick={() => operations.onOpenFile(node.path)}
       style={{ paddingLeft: `${depth * 12 + 18}px` }}
       className={`group flex items-center justify-between rounded px-2 py-1 text-xs cursor-pointer transition-colors ${
         isActive
@@ -132,14 +132,14 @@ const TreeNode: React.FC<TreeNodeProps> = ({
         <button
           onClick={handleRename}
           className="p-0.5 text-slate-500 hover:text-slate-200 rounded transition-colors"
-          title="Rename File"
+          title="Rename"
         >
           <Edit2 className="h-3 w-3" />
         </button>
         <button
           onClick={handleDelete}
           className="p-0.5 text-slate-500 hover:text-red-400 rounded transition-colors"
-          title="Delete File"
+          title="Delete"
         >
           <Trash2 className="h-3 w-3" />
         </button>
@@ -152,11 +152,10 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
   workspacePath,
   fileTree,
   activeFilePath,
-  onOpenFile,
+  operations,
   onOpenFolderDialog,
   onCreateNote,
-  onRenameFile,
-  onDeleteFile,
+  onCreateFolder,
 }) => {
   if (!workspacePath) {
     return (
@@ -177,12 +176,22 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
       {fileTree.length === 0 ? (
         <div className="px-2 py-6 text-xs text-slate-500 text-center space-y-2">
           <div>No markdown files found.</div>
-          <button
-            onClick={onCreateNote}
-            className="inline-flex items-center gap-1 text-xs text-indigo-400 hover:underline"
-          >
-            <Plus className="h-3 w-3" /> Create note
-          </button>
+          <div className="flex items-center justify-center gap-2">
+            <button
+              onClick={onCreateNote}
+              className="inline-flex items-center gap-1 text-xs text-indigo-400 hover:underline"
+            >
+              <Plus className="h-3 w-3" /> Note
+            </button>
+            {onCreateFolder && (
+              <button
+                onClick={onCreateFolder}
+                className="inline-flex items-center gap-1 text-xs text-slate-400 hover:underline"
+              >
+                <FolderPlus className="h-3 w-3" /> Folder
+              </button>
+            )}
+          </div>
         </div>
       ) : (
         fileTree.map((node) => (
@@ -191,9 +200,7 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
             node={node}
             depth={0}
             activeFilePath={activeFilePath}
-            onOpenFile={onOpenFile}
-            onRenameFile={onRenameFile}
-            onDeleteFile={onDeleteFile}
+            operations={operations}
           />
         ))
       )}

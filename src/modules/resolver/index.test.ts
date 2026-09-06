@@ -53,11 +53,12 @@ Check #perf
     expect(byFile.status).toBe('exists');
   });
 
-  it('identifies missing links and proposes suggested creation path', () => {
+  it('identifies missing links and proposes suggested creation filename', () => {
     const res = resolver.resolveLink('NonExistent Note', 'notes/architecture.md');
     expect(res.status).toBe('missing');
     if (res.status === 'missing') {
-      expect(res.suggestedPath).toContain('NonExistent Note.md');
+      // Suggested path is relative filename or relative subpath, not prepended with workspace folder
+      expect(res.suggestedPath).toBe('NonExistent Note.md');
     }
   });
 
