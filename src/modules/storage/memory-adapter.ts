@@ -1,5 +1,6 @@
 import { FileSystemPort } from './port';
 import { FileNode } from '@/types';
+import { normalizePath } from '@/utils/path';
 
 export class MemoryFsAdapter implements FileSystemPort {
   private files: Map<string, string> = new Map();
@@ -8,13 +9,13 @@ export class MemoryFsAdapter implements FileSystemPort {
   constructor(initialFiles?: Record<string, string>) {
     if (initialFiles) {
       for (const [p, content] of Object.entries(initialFiles)) {
-        this.files.set(this.normalize(p), content);
+        this.files.set(normalizePath(p), content);
       }
     }
   }
 
   private normalize(p: string): string {
-    return p.replace(/\\/g, '/').replace(/^\/+/, '');
+    return normalizePath(p);
   }
 
   private resolveKey(filePath: string): string | null {

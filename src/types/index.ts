@@ -22,3 +22,12 @@ export interface NoteIndexEntry {
   tags: string[];
   links: string[];
 }
+
+export interface OpenTab {
+  path: string;
+  name: string;
+  frontmatter: Record<string, any>;
+  content: string;
+  isDirty: boolean;
+}
+

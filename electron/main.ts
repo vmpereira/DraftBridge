@@ -116,8 +116,37 @@ async function scanDirectory(dir: string): Promise<any[]> {
   });
 }
 
+function setupWatcher(rootPath: string) {
+  if (watcher) {
+    watcher.close();
+    watcher = null;
+  }
+  if (!fsSync.existsSync(rootPath)) return;
+
+  try {
+    watcher = chokidar.watch(rootPath, {
+      ignored: /(^|[\/\\])\../,
+      ignoreInitial: true,
+      depth: 8,
+    });
+
+    let debounceTimer: NodeJS.Timeout | null = null;
+    watcher.on('all', (_event, changedPath) => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('fs:changed', changedPath);
+        }
+      }, 250);
+    });
+  } catch (err) {
+    console.error('Failed to setup file watcher', err);
+  }
+}
+
 ipcMain.handle('fs:listTree', async (_event, rootPath: string) => {
   if (!fsSync.existsSync(rootPath)) return [];
+  setupWatcher(rootPath);
   return scanDirectory(rootPath);
 });
 

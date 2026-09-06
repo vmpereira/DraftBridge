@@ -3,20 +3,12 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   FolderOpen,
-  FileText,
   Search,
   Tag,
   Plus,
-  Trash2,
-  Edit2,
-  ChevronRight,
-  ChevronDown,
-  X,
-  Save,
-  Check,
   PanelLeftClose,
   PanelLeft,
-  Folder,
+  FileText,
 } from 'lucide-react';
 import { FileSystemPort } from '@/modules/storage/port';
 import { ElectronIpcAdapter } from '@/modules/storage/electron-adapter';
@@ -25,18 +17,16 @@ import { NoteCodec } from '@/modules/codec';
 import { WikiLinkResolver } from '@/modules/resolver';
 import { PropertiesBanner } from '@/components/properties/PropertiesBanner';
 import { DraftEditor } from '@/components/editor/DraftEditor';
-import { FileNode } from '@/types';
-
-interface OpenTab {
-  path: string;
-  name: string;
-  frontmatter: Record<string, any>;
-  content: string;
-  isDirty: boolean;
-}
+import { FileNode, OpenTab } from '@/types';
+import { normalizePath, getFilename, getBasename, getDirname, joinPath } from '@/utils/path';
+import { TabBar } from './TabBar';
+import { ExplorerView } from './ExplorerView';
+import { SearchPanel } from './SearchPanel';
+import { TagsPanel } from './TagsPanel';
+import { QuickOpenModal } from './QuickOpenModal';
 
 export const WorkspaceShell: React.FC = () => {
-  // Initialize storage adapter: Electron if desktop, else in-memory mock with initial demo note
+  // Storage adapter initialization
   const [storage] = useState<FileSystemPort>(() => {
     if (typeof window !== 'undefined' && window.electronAPI) {
       return new ElectronIpcAdapter();
@@ -54,7 +44,7 @@ DraftBridge is a **markdown reader and writer** built specifically for people wh
 ## What you can do:
 - Format text with the floating toolbar (select any text)
 - Type '/' on a blank line to insert headings, lists, tables, and tasks
-- Link to another note by typing \`[[\` — try clicking [[Second Note]]!
+- Link to another note by typing '[[' — try clicking [[Second Note]]!
 - Add tags anywhere in text like #ideas or in the **Properties Banner** above
 - Everything automatically saves as standard, portable Markdown on your disk.
 `,
@@ -72,7 +62,7 @@ Try adding your own notes in the sidebar.
 
   const [resolver] = useState(() => new WikiLinkResolver());
 
-  // Workspace state: null in Electron until a folder is opened; 'notes' in browser mock
+  // Workspace state
   const [workspacePath, setWorkspacePath] = useState<string | null>(() => {
     if (typeof window !== 'undefined' && window.electronAPI) {
       return null;
@@ -82,6 +72,7 @@ Try adding your own notes in the sidebar.
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
   const [sidebarTab, setSidebarTab] = useState<'files' | 'search' | 'tags'>('files');
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [quickOpen, setQuickOpen] = useState(false);
 
   // Tabs & Active document
   const [tabs, setTabs] = useState<OpenTab[]>([]);
@@ -101,7 +92,6 @@ Try adding your own notes in the sidebar.
       const tree = await storage.listTree(workspacePath);
       setFileTree(tree);
 
-      // Collect all markdown files to index
       const collected: Array<{ path: string; rawContent: string }> = [];
       const traverse = async (nodes: FileNode[]) => {
         for (const node of nodes) {
@@ -127,15 +117,14 @@ Try adding your own notes in the sidebar.
     if (workspacePath) {
       refreshWorkspace();
     }
-    // Open default welcome tab ONLY in browser mock mode
     if (typeof window !== 'undefined' && !window.electronAPI) {
       const loadDefault = async () => {
         try {
-          const raw = await storage.readFile('Welcome.md');
+          const raw = await storage.readFile('notes/Welcome.md');
           const parsed = NoteCodec.decode(raw);
           setTabs([
             {
-              path: 'Welcome.md',
+              path: 'notes/Welcome.md',
               name: 'Welcome.md',
               frontmatter: parsed.frontmatter,
               content: parsed.content,
@@ -149,9 +138,34 @@ Try adding your own notes in the sidebar.
     }
   }, [refreshWorkspace, storage, workspacePath]);
 
+  // Live external file watching
+  useEffect(() => {
+    if (!workspacePath) return;
+    const unsubscribe = storage.watch(workspacePath, async (changedPath) => {
+      await refreshWorkspace();
+      if (activeTab && normalizePath(activeTab.path) === normalizePath(changedPath) && !activeTab.isDirty) {
+        try {
+          const raw = await storage.readFile(changedPath);
+          const parsed = NoteCodec.decode(raw);
+          setTabs((prev) =>
+            prev.map((t, i) =>
+              i === activeTabIdx
+                ? { ...t, frontmatter: parsed.frontmatter, content: parsed.content, isDirty: false }
+                : t
+            )
+          );
+        } catch {}
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [workspacePath, storage, refreshWorkspace, activeTab, activeTabIdx]);
+
   // Open note in tab
   const openNote = async (filePath: string) => {
-    const existingIdx = tabs.findIndex((t) => t.path === filePath);
+    const existingIdx = tabs.findIndex((t) => normalizePath(t.path) === normalizePath(filePath));
     if (existingIdx >= 0) {
       setActiveTabIdx(existingIdx);
       return;
@@ -160,7 +174,7 @@ Try adding your own notes in the sidebar.
     try {
       const raw = await storage.readFile(filePath);
       const parsed = NoteCodec.decode(raw);
-      const filename = filePath.replace(/\\/g, '/').split('/').pop() || filePath;
+      const filename = getFilename(filePath);
 
       const newTab: OpenTab = {
         path: filePath,
@@ -189,27 +203,33 @@ Try adding your own notes in the sidebar.
     }
   };
 
+  // Force Save (Immediate)
+  const forceSave = useCallback(async () => {
+    if (!activeTab) return;
+    setSaveStatus('saving');
+    try {
+      const encoded = NoteCodec.encode(activeTab.frontmatter, activeTab.content);
+      await storage.writeFile(activeTab.path, encoded);
+      setSaveStatus('saved');
+      setTabs((prev) =>
+        prev.map((t, i) => (i === activeTabIdx ? { ...t, isDirty: false } : t))
+      );
+      refreshWorkspace();
+    } catch (err) {
+      console.error('Save failed', err);
+    }
+  }, [activeTab, activeTabIdx, storage, refreshWorkspace]);
+
   // Debounced auto-save
   useEffect(() => {
     if (!activeTab || !activeTab.isDirty) return;
-
     setSaveStatus('saving');
-    const timer = setTimeout(async () => {
-      try {
-        const encoded = NoteCodec.encode(activeTab.frontmatter, activeTab.content);
-        await storage.writeFile(activeTab.path, encoded);
-        setSaveStatus('saved');
-        setTabs((prev) =>
-          prev.map((t, i) => (i === activeTabIdx ? { ...t, isDirty: false } : t))
-        );
-        refreshWorkspace();
-      } catch (err) {
-        console.error('Auto-save failed', err);
-      }
+    const timer = setTimeout(() => {
+      forceSave();
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [activeTab?.content, activeTab?.frontmatter, activeTab?.isDirty, activeTabIdx, storage, refreshWorkspace]);
+  }, [activeTab?.content, activeTab?.frontmatter, activeTab?.isDirty, forceSave]);
 
   // Update active note content
   const handleContentChange = (newMarkdown: string) => {
@@ -232,14 +252,14 @@ Try adding your own notes in the sidebar.
   };
 
   // Open folder dialog
-  const handleOpenFolder = async () => {
+  const handleOpenFolder = useCallback(async () => {
     const selected = await storage.openDialog('folder');
     if (selected) {
       setWorkspacePath(selected);
       setTabs([]);
       setActiveTabIdx(-1);
     }
-  };
+  }, [storage]);
 
   // Open single file dialog
   const handleOpenFile = async () => {
@@ -261,9 +281,9 @@ Try adding your own notes in the sidebar.
 
     const title = prompt('Enter note name:');
     if (!title) return;
-    const cleanTitle = title.replace(/\.md$/i, '');
+    const cleanTitle = getBasename(title);
     const filename = `${cleanTitle}.md`;
-    const fullPath = `${targetFolder}/${filename}`;
+    const fullPath = joinPath(targetFolder, filename);
 
     const initialContent = `---\ntitle: ${cleanTitle}\ntags: []\n---\n# ${cleanTitle}\n\n`;
     try {
@@ -275,16 +295,43 @@ Try adding your own notes in the sidebar.
     }
   };
 
+  // Rename file
+  const handleRenameFile = async (oldPath: string, newPath: string) => {
+    try {
+      await storage.renameFile(oldPath, newPath);
+      setTabs((prev) =>
+        prev.map((t) =>
+          normalizePath(t.path) === normalizePath(oldPath)
+            ? { ...t, path: newPath, name: getFilename(newPath) }
+            : t
+        )
+      );
+      await refreshWorkspace();
+    } catch (err) {
+      alert(`Could not rename file: ${err}`);
+    }
+  };
+
+  // Delete file
+  const handleDeleteFile = async (filePath: string) => {
+    try {
+      await storage.deleteFile(filePath);
+      setTabs((prev) => prev.filter((t) => normalizePath(t.path) !== normalizePath(filePath)));
+      await refreshWorkspace();
+    } catch (err) {
+      alert(`Could not delete file: ${err}`);
+    }
+  };
+
   // Handle clicking a [[wiki-link]]
   const handleWikiLinkClick = async (target: string) => {
     const resolution = resolver.resolveLink(target, activeTab?.path);
     if (resolution.status === 'exists') {
       await openNote(resolution.targetPath);
     } else {
-      // Determine destination folder
       let targetFolder = workspacePath;
       if (!targetFolder && activeTab) {
-        targetFolder = activeTab.path.replace(/\\/g, '/').split('/').slice(0, -1).join('/');
+        targetFolder = getDirname(activeTab.path);
       }
       if (!targetFolder) {
         const picked = await storage.openDialog('folder');
@@ -293,7 +340,7 @@ Try adding your own notes in the sidebar.
         setWorkspacePath(picked);
       }
 
-      const newPath = `${targetFolder}/${resolution.suggestedPath}`;
+      const newPath = joinPath(targetFolder, resolution.suggestedPath);
       const initialContent = `---\ntitle: ${target}\ntags: []\n---\n# ${target}\n\n`;
       try {
         await storage.createFile(newPath, initialContent);
@@ -312,13 +359,42 @@ Try adding your own notes in the sidebar.
     setSidebarOpen(true);
   };
 
+  // Desktop Global Shortcuts (Ctrl+S, Ctrl+O, Ctrl+P, Ctrl+B)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+      const mod = isMac ? e.metaKey : e.ctrlKey;
+
+      if (!mod) return;
+
+      const key = e.key.toLowerCase();
+      if (key === 's') {
+        e.preventDefault();
+        forceSave();
+      } else if (key === 'o') {
+        e.preventDefault();
+        handleOpenFolder();
+      } else if (key === 'p') {
+        e.preventDefault();
+        setQuickOpen(true);
+      } else if (key === 'b') {
+        e.preventDefault();
+        setSidebarOpen((prev) => !prev);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [forceSave, handleOpenFolder]);
+
   // Filtered tags and search
   const tagsSummary = useMemo(() => resolver.searchTags(), [resolver, fileTree]);
   const searchResults = useMemo(() => resolver.searchNotes(searchQuery), [resolver, searchQuery]);
+  const allWorkspaceNotes = useMemo(() => resolver.searchNotes(''), [resolver, fileTree]);
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-950 text-slate-100">
-      {/* Activity Bar (VS Code style far left) */}
+      {/* Activity Bar */}
       <div className="flex w-12 flex-col items-center justify-between border-r border-slate-800/80 bg-slate-950 py-3 select-none">
         <div className="flex flex-col items-center gap-3">
           <button
@@ -326,7 +402,11 @@ Try adding your own notes in the sidebar.
               setSidebarTab('files');
               setSidebarOpen(true);
             }}
-            className={`rounded-lg p-2 transition-colors ${sidebarTab === 'files' && sidebarOpen ? 'bg-indigo-600/20 text-indigo-400' : 'text-slate-400 hover:text-slate-200'}`}
+            className={`rounded-lg p-2 transition-colors ${
+              sidebarOpen && sidebarTab === 'files'
+                ? 'bg-indigo-600/20 text-indigo-400'
+                : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+            }`}
             title="Explorer (Files)"
           >
             <FolderOpen className="h-5 w-5" />
@@ -336,7 +416,11 @@ Try adding your own notes in the sidebar.
               setSidebarTab('search');
               setSidebarOpen(true);
             }}
-            className={`rounded-lg p-2 transition-colors ${sidebarTab === 'search' && sidebarOpen ? 'bg-indigo-600/20 text-indigo-400' : 'text-slate-400 hover:text-slate-200'}`}
+            className={`rounded-lg p-2 transition-colors ${
+              sidebarOpen && sidebarTab === 'search'
+                ? 'bg-indigo-600/20 text-indigo-400'
+                : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+            }`}
             title="Search Notes"
           >
             <Search className="h-5 w-5" />
@@ -346,7 +430,11 @@ Try adding your own notes in the sidebar.
               setSidebarTab('tags');
               setSidebarOpen(true);
             }}
-            className={`rounded-lg p-2 transition-colors ${sidebarTab === 'tags' && sidebarOpen ? 'bg-indigo-600/20 text-indigo-400' : 'text-slate-400 hover:text-slate-200'}`}
+            className={`rounded-lg p-2 transition-colors ${
+              sidebarOpen && sidebarTab === 'tags'
+                ? 'bg-indigo-600/20 text-indigo-400'
+                : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+            }`}
             title="Tags Browser"
           >
             <Tag className="h-5 w-5" />
@@ -354,7 +442,7 @@ Try adding your own notes in the sidebar.
         </div>
         <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="text-slate-500 hover:text-slate-300 p-2"
+          className="text-slate-500 hover:text-slate-300 p-2 transition-colors"
           title="Toggle Sidebar (Ctrl+B)"
         >
           {sidebarOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
@@ -366,9 +454,14 @@ Try adding your own notes in the sidebar.
         <div className="flex w-64 flex-col border-r border-slate-800/80 bg-slate-900/60 select-none">
           {/* Header */}
           <div className="flex h-10 items-center justify-between px-3 border-b border-slate-800/80">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 truncate max-w-[170px]" title={workspacePath || 'Explorer'}>
+            <span
+              className="text-xs font-semibold uppercase tracking-wider text-slate-400 truncate max-w-[170px]"
+              title={workspacePath || 'Explorer'}
+            >
               {sidebarTab === 'files'
-                ? (workspacePath ? workspacePath.replace(/\\/g, '/').split('/').pop() || 'Files' : 'No Folder')
+                ? workspacePath
+                  ? getFilename(workspacePath) || 'Files'
+                  : 'No Folder'
                 : sidebarTab === 'search'
                 ? 'Search'
                 : 'Tags'}
@@ -387,90 +480,43 @@ Try adding your own notes in the sidebar.
           {/* Tab Content */}
           <div className="flex-1 overflow-y-auto p-2 text-sm">
             {sidebarTab === 'files' && (
-              <div className="space-y-0.5">
-                {!workspacePath ? (
-                  <div className="px-3 py-6 text-center">
-                    <p className="text-xs text-slate-400 mb-3">No folder opened.</p>
-                    <button
-                      onClick={handleOpenFolder}
-                      className="rounded bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 transition-colors"
-                    >
-                      Open Folder
-                    </button>
-                  </div>
-                ) : fileTree.length === 0 ? (
-                  <div className="px-2 py-4 text-xs text-slate-500 text-center">
-                    No notes found. Create a new note to start.
-                  </div>
-                ) : (
-                  fileTree.map((node) => (
-                    <div
-                      key={node.path}
-                      onClick={() => !node.isDirectory && openNote(node.path)}
-                      className={`flex items-center gap-2 rounded px-2 py-1 text-xs cursor-pointer transition-colors ${activeTab?.path === node.path ? 'bg-indigo-600/20 text-indigo-300 font-medium' : 'text-slate-300 hover:bg-slate-800/60'}`}
-                    >
-                      {node.isDirectory ? (
-                        <Folder className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
-                      ) : (
-                        <FileText className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                      )}
-                      <span className="truncate">{node.name}</span>
-                    </div>
-                  ))
-                )}
-              </div>
+              <ExplorerView
+                workspacePath={workspacePath}
+                fileTree={fileTree}
+                activeFilePath={activeTab?.path}
+                onOpenFile={openNote}
+                onOpenFolderDialog={handleOpenFolder}
+                onCreateNote={handleCreateNote}
+                onRenameFile={handleRenameFile}
+                onDeleteFile={handleDeleteFile}
+              />
             )}
 
             {sidebarTab === 'search' && (
-              <div className="space-y-3">
-                <input
-                  type="text"
-                  placeholder="Search note title..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full rounded border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-indigo-500"
-                />
-                <div className="space-y-1">
-                  {searchResults.map((res) => (
-                    <div
-                      key={res.path}
-                      onClick={() => openNote(res.path)}
-                      className="flex items-center gap-2 rounded px-2 py-1.5 text-xs text-slate-300 hover:bg-slate-800/60 cursor-pointer"
-                    >
-                      <FileText className="h-3.5 w-3.5 text-slate-500 shrink-0" />
-                      <div className="truncate">
-                        <div className="font-medium truncate">{res.title}</div>
-                        <div className="text-[10px] text-slate-500 truncate">{res.path}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <SearchPanel
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+                results={searchResults}
+                onSelectNote={openNote}
+              />
             )}
 
             {sidebarTab === 'tags' && (
-              <div className="space-y-1">
-                {tagsSummary.map((item) => (
-                  <div
-                    key={item.tag}
-                    onClick={() => setSelectedTagFilter(selectedTagFilter === item.tag ? null : item.tag)}
-                    className={`flex items-center justify-between rounded px-2 py-1.5 text-xs cursor-pointer transition-colors ${selectedTagFilter === item.tag ? 'bg-indigo-600 text-white font-medium' : 'text-slate-300 hover:bg-slate-800/60'}`}
-                  >
-                    <span className="truncate">#{item.tag}</span>
-                    <span className="rounded-full bg-slate-800 px-1.5 py-0.2 text-[10px] text-slate-400">
-                      {item.count}
-                    </span>
-                  </div>
-                ))}
-              </div>
+              <TagsPanel
+                tagsSummary={tagsSummary}
+                selectedTagFilter={selectedTagFilter}
+                onSelectTag={setSelectedTagFilter}
+                onOpenNote={openNote}
+              />
             )}
           </div>
 
-          {/* Quick Actions footer */}
+          {/* Footer Actions */}
           <div className="border-t border-slate-800/80 p-2 text-xs space-y-1">
             <button
               onClick={handleOpenFolder}
               className="flex items-center gap-2 w-full rounded px-2 py-1.5 text-slate-400 hover:bg-slate-800 hover:text-slate-200 text-left transition-colors"
+              title="Open Folder (Ctrl+O)"
             >
               <FolderOpen className="h-3.5 w-3.5" />
               Open Folder...
@@ -488,46 +534,14 @@ Try adding your own notes in the sidebar.
 
       {/* Main Content Area */}
       <div className="flex flex-1 flex-col overflow-hidden bg-slate-950">
-        {/* Tab Bar */}
-        <div className="flex h-10 items-center justify-between border-b border-slate-800/80 bg-slate-900/40 px-2 select-none">
-          <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
-            {tabs.map((tab, idx) => (
-              <div
-                key={tab.path}
-                onClick={() => setActiveTabIdx(idx)}
-                className={`group flex items-center gap-2 rounded-t-md px-3 py-1.5 text-xs font-medium cursor-pointer border-t-2 transition-all ${idx === activeTabIdx ? 'border-indigo-500 bg-slate-950 text-slate-100' : 'border-transparent text-slate-400 hover:bg-slate-900/80 hover:text-slate-200'}`}
-              >
-                <FileText className="h-3.5 w-3.5 text-slate-500" />
-                <span className="truncate max-w-[120px]">{tab.name}</span>
-                {tab.isDirty ? (
-                  <div className="h-1.5 w-1.5 rounded-full bg-indigo-400" />
-                ) : (
-                  <button
-                    onClick={(e) => closeTab(idx, e)}
-                    className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-slate-300 rounded p-0.5"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-
-          {/* Save Status Badge */}
-          <div className="flex items-center gap-2 text-xs text-slate-400 pr-2">
-            {saveStatus === 'saving' ? (
-              <span className="flex items-center gap-1.5 text-amber-400 text-[11px]">
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
-                Saving...
-              </span>
-            ) : (
-              <span className="flex items-center gap-1.5 text-emerald-400 text-[11px]">
-                <Check className="h-3 w-3" />
-                Saved
-              </span>
-            )}
-          </div>
-        </div>
+        {/* Tab Bar Component */}
+        <TabBar
+          tabs={tabs}
+          activeTabIdx={activeTabIdx}
+          saveStatus={saveStatus}
+          onSelectTab={setActiveTabIdx}
+          onCloseTab={closeTab}
+        />
 
         {/* Editor Workspace Canvas */}
         <div className="flex-1 overflow-y-auto px-12 py-8 max-w-4xl mx-auto w-full">
@@ -554,18 +568,34 @@ Try adding your own notes in the sidebar.
               <FileText className="h-12 w-12 text-slate-700 mb-3" />
               <h3 className="text-base font-semibold text-slate-300">No note opened</h3>
               <p className="text-xs text-slate-500 max-w-xs mt-1 mb-4">
-                Select a note from the explorer, open a workspace folder, or create a new note.
+                Select a note from explorer, open a workspace folder, or press Ctrl+P to find a note.
               </p>
-              <button
-                onClick={handleCreateNote}
-                className="rounded-md bg-indigo-600 px-3.5 py-2 text-xs font-medium text-white hover:bg-indigo-500 transition-colors"
-              >
-                Create Note
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleCreateNote}
+                  className="rounded-md bg-indigo-600 px-3.5 py-2 text-xs font-medium text-white hover:bg-indigo-500 transition-colors shadow-sm"
+                >
+                  Create Note
+                </button>
+                <button
+                  onClick={handleOpenFolder}
+                  className="rounded-md border border-slate-700 px-3.5 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800 transition-colors"
+                >
+                  Open Folder
+                </button>
+              </div>
             </div>
           )}
         </div>
       </div>
+
+      {/* Quick Open Modal (Ctrl+P) */}
+      <QuickOpenModal
+        isOpen={quickOpen}
+        onClose={() => setQuickOpen(false)}
+        notes={allWorkspaceNotes}
+        onSelectNote={openNote}
+      />
     </div>
   );
 };
