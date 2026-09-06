@@ -53,6 +53,20 @@ Check #perf
     expect(byFile.status).toBe('exists');
   });
 
+  it('prioritizes sibling directory files over identical titles in distant folders', () => {
+    const localResolver = new WikiLinkResolver();
+    localResolver.updateIndex([
+      { path: 'archive/readme.md', rawContent: '# Readme\nArchive doc' },
+      { path: 'project/readme.md', rawContent: '# Readme\nProject doc' },
+    ]);
+
+    const resolved = localResolver.resolveLink('readme', 'project/other.md');
+    expect(resolved.status).toBe('exists');
+    if (resolved.status === 'exists') {
+      expect(resolved.targetPath).toBe('project/readme.md');
+    }
+  });
+
   it('identifies missing links and proposes suggested creation filename', () => {
     const res = resolver.resolveLink('NonExistent Note', 'notes/architecture.md');
     expect(res.status).toBe('missing');

@@ -1,5 +1,6 @@
 import { NoteCodec } from '../codec';
 import { LinkResolution, NoteIndexEntry } from '@/types';
+import { getDirname } from '@/utils/path';
 
 export class WikiLinkResolver {
   private entries: Map<string, NoteIndexEntry> = new Map();
@@ -47,24 +48,29 @@ export class WikiLinkResolver {
   resolveLink(linkText: string, currentFilePath?: string): LinkResolution {
     const target = linkText.trim().toLowerCase().replace(/\.md$/i, '');
 
-    // Check by exact path, title, or filename
+    // Check sibling resolution relative to currentFilePath first (prioritize local directory notes)
+    if (currentFilePath) {
+      const parent = getDirname(currentFilePath);
+      const siblingPath = parent ? `${parent}/${target}.md`.toLowerCase() : `${target}.md`.toLowerCase();
+      for (const entry of this.entries.values()) {
+        const normEntryPath = entry.path.toLowerCase();
+        const entryParent = getDirname(entry.path);
+        const filename = entry.path.split('/').pop()?.replace(/\.md$/i, '').toLowerCase();
+        const title = entry.title.toLowerCase();
+
+        if (normEntryPath === siblingPath || (entryParent === parent && (title === target || filename === target))) {
+          return { status: 'exists', targetPath: entry.path };
+        }
+      }
+    }
+
+    // Check by exact path, title, or filename across workspace
     for (const entry of this.entries.values()) {
       const filename = entry.path.split('/').pop()?.replace(/\.md$/i, '').toLowerCase();
       const title = entry.title.toLowerCase();
 
       if (title === target || filename === target || entry.path.toLowerCase() === target) {
         return { status: 'exists', targetPath: entry.path };
-      }
-    }
-
-    // Check sibling resolution relative to currentFilePath
-    if (currentFilePath) {
-      const parent = currentFilePath.replace(/\\/g, '/').split('/').slice(0, -1).join('/');
-      const siblingPath = parent ? `${parent}/${target}.md`.toLowerCase() : `${target}.md`.toLowerCase();
-      for (const entry of this.entries.values()) {
-        if (entry.path.toLowerCase() === siblingPath) {
-          return { status: 'exists', targetPath: entry.path };
-        }
       }
     }
 

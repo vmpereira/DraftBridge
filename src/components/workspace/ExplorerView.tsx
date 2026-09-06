@@ -14,17 +14,17 @@ import {
 import { FileNode } from '@/types';
 import { joinPath, getDirname } from '@/utils/path';
 
-export interface FileOperations {
-  onOpenFile: (path: string) => void;
-  onRenameFile: (oldPath: string, newPath: string) => void;
-  onDeleteFile: (path: string) => void;
+export interface NodeOperations {
+  onOpenNode: (path: string) => void;
+  onRenameNode: (oldPath: string, newPath: string) => void;
+  onDeleteNode: (path: string) => void;
 }
 
 interface ExplorerViewProps {
   workspacePath: string | null;
   fileTree: FileNode[];
   activeFilePath?: string;
-  operations: FileOperations;
+  operations: NodeOperations;
   onOpenFolderDialog: () => void;
   onCreateNote: () => void;
   onCreateFolder?: () => void;
@@ -34,7 +34,7 @@ interface TreeNodeProps {
   node: FileNode;
   depth: number;
   activeFilePath?: string;
-  operations: FileOperations;
+  operations: NodeOperations;
 }
 
 const TreeNode: React.FC<TreeNodeProps> = ({
@@ -54,14 +54,14 @@ const TreeNode: React.FC<TreeNodeProps> = ({
     const parentDir = getDirname(node.path);
     const finalName = newName.endsWith('.md') || node.isDirectory ? newName : `${newName}.md`;
     const newPath = joinPath(parentDir, finalName);
-    operations.onRenameFile(node.path, newPath);
+    operations.onRenameNode(node.path, newPath);
   };
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
     const confirm = window.confirm(`Delete ${node.name}? This action cannot be undone.`);
     if (confirm) {
-      operations.onDeleteFile(node.path);
+      operations.onDeleteNode(node.path);
     }
   };
 
@@ -122,7 +122,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
 
   return (
     <div
-      onClick={() => operations.onOpenFile(node.path)}
+      onClick={() => operations.onOpenNode(node.path)}
       style={{ paddingLeft: `${depth * 12 + 18}px` }}
       className={`group flex items-center justify-between rounded px-2 py-1 text-xs cursor-pointer transition-colors ${
         isActive

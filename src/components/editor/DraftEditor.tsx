@@ -219,27 +219,35 @@ export const DraftEditor: React.FC<DraftEditorProps> = ({
         if (textBefore === '/') {
           const coords = editor.view.coordsAtPos(selection.from);
           setSlashMenuPos({ top: coords.bottom + 8, left: coords.left });
+          setSlashTriggerPos(selection.from);
           setSlashMenuOpen(true);
         } else {
           setSlashMenuOpen(false);
+          setSlashTriggerPos(null);
         }
       }
     },
   });
 
+  const [slashTriggerPos, setSlashTriggerPos] = useState<number | null>(null);
+
   // Helper to execute slash menu item cleanly
   const runSlashCommand = (action: () => void) => {
     if (!editor) return;
-    editor
-      .chain()
-      .focus()
-      .deleteRange({
-        from: editor.state.selection.from - 1,
-        to: editor.state.selection.from,
-      })
-      .run();
+    const targetPos = slashTriggerPos ?? editor.state.selection.from;
+    const charBefore = editor.state.doc.textBetween(Math.max(0, targetPos - 1), targetPos);
+    
+    const chain = editor.chain().focus();
+    if (charBefore === '/') {
+      chain.deleteRange({
+        from: Math.max(0, targetPos - 1),
+        to: targetPos,
+      });
+    }
+    chain.run();
     action();
     setSlashMenuOpen(false);
+    setSlashTriggerPos(null);
   };
 
   // Keep content in sync when opening different files

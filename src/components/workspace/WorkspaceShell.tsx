@@ -21,7 +21,7 @@ import { DraftEditor } from '@/components/editor/DraftEditor';
 import { FileNode, OpenTab } from '@/types';
 import { normalizePath, getFilename, getBasename, getDirname, joinPath } from '@/utils/path';
 import { TabBar } from './TabBar';
-import { ExplorerView, FileOperations } from './ExplorerView';
+import { ExplorerView, NodeOperations } from './ExplorerView';
 import { SearchPanel } from './SearchPanel';
 import { TagsPanel } from './TagsPanel';
 import { QuickOpenModal } from './QuickOpenModal';
@@ -64,6 +64,7 @@ Try adding your own notes in the sidebar.
   const [resolver] = useState(() => new WikiLinkResolver());
 
   // Workspace state
+  const [workspaceMode, setWorkspaceMode] = useState<'folder' | 'file'>('folder');
   const [workspacePath, setWorkspacePath] = useState<string | null>(() => {
     if (typeof window !== 'undefined' && window.electronAPI) {
       return null;
@@ -256,20 +257,21 @@ Try adding your own notes in the sidebar.
   const handleOpenFolder = useCallback(async () => {
     const selected = await storage.openDialog('folder');
     if (selected) {
+      setWorkspaceMode('folder');
       setWorkspacePath(selected);
       setTabs([]);
       setActiveTabIdx(-1);
+      setSidebarOpen(true);
     }
   }, [storage]);
 
-  // Open single file dialog
+  // Open single file dialog (distraction-free single document mode per Spec line 24 & line 33)
   const handleOpenFile = async () => {
     const selected = await storage.openDialog('file');
     if (selected) {
-      const parentDir = getDirname(selected);
-      if (parentDir) {
-        setWorkspacePath(parentDir);
-      }
+      setWorkspaceMode('file');
+      setWorkspacePath(null);
+      setSidebarOpen(false);
       await openNote(selected);
     }
   };
@@ -520,9 +522,9 @@ Try adding your own notes in the sidebar.
                 fileTree={fileTree}
                 activeFilePath={activeTab?.path}
                 operations={{
-                  onOpenFile: openNote,
-                  onRenameFile: handleRenameFile,
-                  onDeleteFile: handleDeleteFile,
+                  onOpenNode: openNote,
+                  onRenameNode: handleRenameFile,
+                  onDeleteNode: handleDeleteFile,
                 }}
                 onOpenFolderDialog={handleOpenFolder}
                 onCreateNote={handleCreateNote}
