@@ -215,8 +215,8 @@ export const DraftEditor: React.FC<DraftEditorProps> = ({
       } else {
         setWikiSuggestOpen(false);
 
-        // Check '/'
-        if (textBefore.trim() === '/') {
+        // Check '/' strictly at start of empty line
+        if (textBefore === '/') {
           const coords = editor.view.coordsAtPos(selection.from);
           setSlashMenuPos({ top: coords.bottom + 8, left: coords.left });
           setSlashMenuOpen(true);
@@ -226,6 +226,21 @@ export const DraftEditor: React.FC<DraftEditorProps> = ({
       }
     },
   });
+
+  // Helper to execute slash menu item cleanly
+  const runSlashCommand = (action: () => void) => {
+    if (!editor) return;
+    editor
+      .chain()
+      .focus()
+      .deleteRange({
+        from: editor.state.selection.from - 1,
+        to: editor.state.selection.from,
+      })
+      .run();
+    action();
+    setSlashMenuOpen(false);
+  };
 
   // Keep content in sync when opening different files
   useEffect(() => {
@@ -346,80 +361,56 @@ export const DraftEditor: React.FC<DraftEditorProps> = ({
             Basic Blocks
           </div>
           <button
-            onClick={() => {
-              editor.chain().focus().deleteRange({ from: editor.state.selection.from - 1, to: editor.state.selection.from }).toggleHeading({ level: 1 }).run();
-              setSlashMenuOpen(false);
-            }}
+            onClick={() => runSlashCommand(() => editor.chain().focus().toggleHeading({ level: 1 }).run())}
             className="flex items-center gap-2.5 w-full rounded-md px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800 text-left transition-colors"
           >
             <Heading1 className="h-4 w-4 text-indigo-400" />
             <span>Heading 1</span>
           </button>
           <button
-            onClick={() => {
-              editor.chain().focus().deleteRange({ from: editor.state.selection.from - 1, to: editor.state.selection.from }).toggleHeading({ level: 2 }).run();
-              setSlashMenuOpen(false);
-            }}
+            onClick={() => runSlashCommand(() => editor.chain().focus().toggleHeading({ level: 2 }).run())}
             className="flex items-center gap-2.5 w-full rounded-md px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800 text-left transition-colors"
           >
             <Heading2 className="h-4 w-4 text-indigo-400" />
             <span>Heading 2</span>
           </button>
           <button
-            onClick={() => {
-              editor.chain().focus().deleteRange({ from: editor.state.selection.from - 1, to: editor.state.selection.from }).toggleBulletList().run();
-              setSlashMenuOpen(false);
-            }}
+            onClick={() => runSlashCommand(() => editor.chain().focus().toggleBulletList().run())}
             className="flex items-center gap-2.5 w-full rounded-md px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800 text-left transition-colors"
           >
             <List className="h-4 w-4 text-indigo-400" />
             <span>Bullet List</span>
           </button>
           <button
-            onClick={() => {
-              editor.chain().focus().deleteRange({ from: editor.state.selection.from - 1, to: editor.state.selection.from }).toggleOrderedList().run();
-              setSlashMenuOpen(false);
-            }}
+            onClick={() => runSlashCommand(() => editor.chain().focus().toggleOrderedList().run())}
             className="flex items-center gap-2.5 w-full rounded-md px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800 text-left transition-colors"
           >
             <ListOrdered className="h-4 w-4 text-indigo-400" />
             <span>Numbered List</span>
           </button>
           <button
-            onClick={() => {
-              editor.chain().focus().deleteRange({ from: editor.state.selection.from - 1, to: editor.state.selection.from }).toggleTaskList().run();
-              setSlashMenuOpen(false);
-            }}
+            onClick={() => runSlashCommand(() => editor.chain().focus().toggleTaskList().run())}
             className="flex items-center gap-2.5 w-full rounded-md px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800 text-left transition-colors"
           >
             <CheckSquare className="h-4 w-4 text-indigo-400" />
             <span>Task Checklist</span>
           </button>
           <button
-            onClick={() => {
-              editor.chain().focus().deleteRange({ from: editor.state.selection.from - 1, to: editor.state.selection.from }).toggleBlockquote().run();
-              setSlashMenuOpen(false);
-            }}
+            onClick={() => runSlashCommand(() => editor.chain().focus().toggleBlockquote().run())}
             className="flex items-center gap-2.5 w-full rounded-md px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800 text-left transition-colors"
           >
             <Quote className="h-4 w-4 text-indigo-400" />
             <span>Callout / Quote</span>
           </button>
           <button
-            onClick={() => {
-              editor.chain().focus().deleteRange({ from: editor.state.selection.from - 1, to: editor.state.selection.from }).setHorizontalRule().run();
-              setSlashMenuOpen(false);
-            }}
+            onClick={() => runSlashCommand(() => editor.chain().focus().setHorizontalRule().run())}
             className="flex items-center gap-2.5 w-full rounded-md px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800 text-left transition-colors"
           >
             <Minus className="h-4 w-4 text-indigo-400" />
             <span>Divider</span>
           </button>
           <button
-            onClick={() => {
-              editor.chain().focus().deleteRange({ from: editor.state.selection.from - 1, to: editor.state.selection.from }).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
-              setSlashMenuOpen(false);
-            }}
+            onClick={() => runSlashCommand(() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run())}
             className="flex items-center gap-2.5 w-full rounded-md px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800 text-left transition-colors"
           >
             <TableIcon className="h-4 w-4 text-indigo-400" />

@@ -6,6 +6,7 @@ import {
   Search,
   Tag,
   Plus,
+  FolderPlus,
   PanelLeftClose,
   PanelLeft,
   FileText,
@@ -265,6 +266,10 @@ Try adding your own notes in the sidebar.
   const handleOpenFile = async () => {
     const selected = await storage.openDialog('file');
     if (selected) {
+      const parentDir = getDirname(selected);
+      if (parentDir) {
+        setWorkspacePath(parentDir);
+      }
       await openNote(selected);
     }
   };
@@ -495,6 +500,13 @@ Try adding your own notes in the sidebar.
                   title="New Note"
                 >
                   <Plus className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={handleCreateFolder}
+                  className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                  title="New Folder"
+                >
+                  <FolderPlus className="h-4 w-4" />
                 </button>
               </div>
             )}

@@ -57,6 +57,17 @@ export class WikiLinkResolver {
       }
     }
 
+    // Check sibling resolution relative to currentFilePath
+    if (currentFilePath) {
+      const parent = currentFilePath.replace(/\\/g, '/').split('/').slice(0, -1).join('/');
+      const siblingPath = parent ? `${parent}/${target}.md`.toLowerCase() : `${target}.md`.toLowerCase();
+      for (const entry of this.entries.values()) {
+        if (entry.path.toLowerCase() === siblingPath) {
+          return { status: 'exists', targetPath: entry.path };
+        }
+      }
+    }
+
     // Propose creation path (relative to workspace/target directory)
     const suggested = `${linkText.trim()}.md`;
     return { status: 'missing', suggestedPath: suggested };

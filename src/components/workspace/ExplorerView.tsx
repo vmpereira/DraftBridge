@@ -84,6 +84,13 @@ const TreeNode: React.FC<TreeNodeProps> = ({
           </div>
           <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1">
             <button
+              onClick={handleRename}
+              className="p-0.5 text-slate-500 hover:text-slate-200 rounded transition-colors"
+              title="Rename Folder"
+            >
+              <Edit2 className="h-3 w-3" />
+            </button>
+            <button
               onClick={handleDelete}
               className="p-0.5 text-slate-500 hover:text-red-400 rounded transition-colors"
               title="Delete Folder"
