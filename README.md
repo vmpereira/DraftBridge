@@ -1,2 +1,2 @@
 # DraftBridge
-A lightweight Markdown reader and editor for Windows. Open, edit, and navigate connected .md files with [[wikilinks]]—without a heavyweight IDE or knowledge-management app.
+DraftBridge is a free and open-source, lightweight Markdown reader and editor for Windows, built for people who want to open, write, and connect Markdown files without a heavyweight IDE or knowledge-management application.
