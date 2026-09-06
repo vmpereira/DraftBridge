@@ -1,0 +1,187 @@
+import { FileSystemPort } from './port';
+import { FileNode } from '@/types';
+
+export class MemoryFsAdapter implements FileSystemPort {
+  private files: Map<string, string> = new Map();
+  private watchers: Set<(path: string) => void> = new Set();
+
+  constructor(initialFiles?: Record<string, string>) {
+    if (initialFiles) {
+      for (const [p, content] of Object.entries(initialFiles)) {
+        this.files.set(this.normalize(p), content);
+      }
+    }
+  }
+
+  private normalize(p: string): string {
+    return p.replace(/\\/g, '/').replace(/^\/+/, '');
+  }
+
+  private resolveKey(filePath: string): string | null {
+    const norm = this.normalize(filePath);
+    if (this.files.has(norm)) return norm;
+    const lower = norm.toLowerCase();
+    for (const key of this.files.keys()) {
+      if (key.toLowerCase() === lower) {
+        return key;
+      }
+    }
+    const base = norm.split('/').pop()?.toLowerCase();
+    if (base) {
+      for (const key of this.files.keys()) {
+        if (key.split('/').pop()?.toLowerCase() === base) {
+          return key;
+        }
+      }
+    }
+    return null;
+  }
+
+  async openDialog(type: 'file' | 'folder'): Promise<string | null> {
+    // In real browser DOM (when user tests in browser preview outside Electron):
+    if (typeof document !== 'undefined' && typeof window !== 'undefined' && typeof document.createElement === 'function') {
+      return new Promise<string | null>((resolve) => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        if (type === 'folder') {
+          input.setAttribute('webkitdirectory', '');
+          input.setAttribute('directory', '');
+        } else {
+          input.accept = '.md,.markdown,.txt';
+        }
+
+        input.onchange = async () => {
+          if (!input.files || input.files.length === 0) {
+            resolve(null);
+            return;
+          }
+
+          if (type === 'folder') {
+            const first = input.files[0];
+            const folderName = first.webkitRelativePath
+              ? first.webkitRelativePath.split('/')[0]
+              : 'notes';
+
+            for (let i = 0; i < input.files.length; i++) {
+              const file = input.files[i];
+              if (file.name.endsWith('.md') || file.name.endsWith('.markdown') || file.name.endsWith('.txt')) {
+                const text = await file.text();
+                const path = file.webkitRelativePath || `${folderName}/${file.name}`;
+                this.files.set(this.normalize(path), text);
+              }
+            }
+            resolve(folderName);
+          } else {
+            const file = input.files[0];
+            const text = await file.text();
+            const path = `notes/${file.name}`;
+            this.files.set(this.normalize(path), text);
+            resolve(path);
+          }
+        };
+
+        input.oncancel = () => resolve(null);
+        input.click();
+      });
+    }
+
+    // Headless / test environment fallback
+    if (type === 'folder') {
+      return 'notes';
+    }
+    for (const key of this.files.keys()) {
+      return key;
+    }
+    return 'notes/Welcome.md';
+  }
+
+  async readFile(filePath: string): Promise<string> {
+    const key = this.resolveKey(filePath);
+    if (!key) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+    return this.files.get(key)!;
+  }
+
+  async writeFile(filePath: string, content: string): Promise<void> {
+    const key = this.resolveKey(filePath) || this.normalize(filePath);
+    this.files.set(key, content);
+    this.notify(key);
+  }
+
+  async createFile(filePath: string, initialContent = ''): Promise<void> {
+    const existing = this.resolveKey(filePath);
+    if (existing) {
+      throw new Error(`File already exists: ${filePath}`);
+    }
+    const key = this.normalize(filePath);
+    this.files.set(key, initialContent);
+    this.notify(key);
+  }
+
+  async deleteFile(filePath: string): Promise<void> {
+    const key = this.resolveKey(filePath) || this.normalize(filePath);
+    this.files.delete(key);
+    this.notify(key);
+  }
+
+  async renameFile(oldPath: string, newPath: string): Promise<void> {
+    const oldKey = this.resolveKey(oldPath);
+    if (!oldKey) {
+      throw new Error(`File not found: ${oldPath}`);
+    }
+    const content = this.files.get(oldKey)!;
+    this.files.delete(oldKey);
+    const newKey = this.normalize(newPath);
+    this.files.set(newKey, content);
+    this.notify(newKey);
+  }
+
+  async listTree(rootPath: string): Promise<FileNode[]> {
+    const normRoot = this.normalize(rootPath);
+    const nodes: FileNode[] = [];
+
+    for (const [filePath] of this.files) {
+      if (filePath.startsWith(normRoot)) {
+        const relative = filePath.slice(normRoot.length).replace(/^\/+/, '');
+        const parts = relative.split('/');
+
+        let currentLevel = nodes;
+        let currentPath = normRoot;
+
+        for (let i = 0; i < parts.length; i++) {
+          const part = parts[i];
+          const isFile = i === parts.length - 1;
+          currentPath = currentPath ? `${currentPath}/${part}` : part;
+
+          let existing = currentLevel.find((n) => n.name === part);
+          if (!existing) {
+            existing = {
+              name: part,
+              path: currentPath,
+              isDirectory: !isFile,
+              children: isFile ? undefined : [],
+            };
+            currentLevel.push(existing);
+          }
+          if (!isFile && existing.children) {
+            currentLevel = existing.children;
+          }
+        }
+      }
+    }
+
+    return nodes;
+  }
+
+  watch(targetPath: string, onChange: (path: string) => void): () => void {
+    this.watchers.add(onChange);
+    return () => this.watchers.delete(onChange);
+  }
+
+  private notify(path: string) {
+    for (const listener of this.watchers) {
+      listener(path);
+    }
+  }
+}
