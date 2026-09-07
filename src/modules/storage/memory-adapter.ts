@@ -28,10 +28,21 @@ export class InMemoryFsAdapter implements FileSystemPort {
         return key;
       }
     }
-    const base = norm.split('/').pop()?.toLowerCase();
-    if (base) {
+
+    // Basename fallback only when path has no directory (or for root test files like 'Welcome.md')
+    const hasDir = norm.includes('/');
+    if (!hasDir) {
+      const base = norm.toLowerCase();
       for (const key of this.files.keys()) {
         if (key.split('/').pop()?.toLowerCase() === base) {
+          return key;
+        }
+      }
+    } else {
+      // If path specifies a directory, only match if the parent directory matches or key has no directory
+      const base = norm.split('/').pop()?.toLowerCase();
+      for (const key of this.files.keys()) {
+        if (!key.includes('/') && key.toLowerCase() === base) {
           return key;
         }
       }
@@ -128,28 +139,64 @@ export class InMemoryFsAdapter implements FileSystemPort {
   }
 
   async deleteFile(filePath: string): Promise<void> {
-    const key = this.resolveKey(filePath) || this.normalize(filePath);
+    const norm = this.normalize(filePath);
+    const key = this.resolveKey(filePath) || norm;
     this.files.delete(key);
     this.folders.delete(key);
-    this.notify(key);
+
+    // Cascade delete to nested files and folders
+    const prefix = `${norm}/`;
+    for (const f of Array.from(this.files.keys())) {
+      if (f.startsWith(prefix)) {
+        this.files.delete(f);
+      }
+    }
+    for (const folder of Array.from(this.folders)) {
+      if (folder.startsWith(prefix)) {
+        this.folders.delete(folder);
+      }
+    }
+    this.notify(norm);
   }
 
   async renameFile(oldPath: string, newPath: string): Promise<void> {
+    const oldNorm = this.normalize(oldPath);
+    const newNorm = this.normalize(newPath);
+
     const oldKey = this.resolveKey(oldPath);
-    if (!oldKey) {
-      if (this.folders.has(this.normalize(oldPath))) {
-        this.folders.delete(this.normalize(oldPath));
-        this.folders.add(this.normalize(newPath));
-        this.notify(this.normalize(newPath));
-        return;
-      }
+    if (oldKey) {
+      const content = this.files.get(oldKey)!;
+      this.files.delete(oldKey);
+      this.files.set(newNorm, content);
+      this.notify(newNorm);
+      return;
+    }
+
+    // Check if it is a folder (explicit or implicit parent of files)
+    const oldPrefix = `${oldNorm}/`;
+    const matchingFiles = Array.from(this.files.keys()).filter((f) => f.startsWith(oldPrefix));
+    const matchingFolders = Array.from(this.folders).filter((f) => f === oldNorm || f.startsWith(oldPrefix));
+
+    if (matchingFiles.length === 0 && matchingFolders.length === 0) {
       throw new Error(`File not found: ${oldPath}`);
     }
-    const content = this.files.get(oldKey)!;
-    this.files.delete(oldKey);
-    const newKey = this.normalize(newPath);
-    this.files.set(newKey, content);
-    this.notify(newKey);
+
+    // Rename matching files
+    for (const file of matchingFiles) {
+      const content = this.files.get(file)!;
+      this.files.delete(file);
+      const updatedFile = `${newNorm}/${file.slice(oldPrefix.length)}`;
+      this.files.set(updatedFile, content);
+    }
+
+    // Rename matching folders
+    for (const folder of matchingFolders) {
+      this.folders.delete(folder);
+      const updatedFolder = folder === oldNorm ? newNorm : `${newNorm}/${folder.slice(oldPrefix.length)}`;
+      this.folders.add(updatedFolder);
+    }
+
+    this.notify(newNorm);
   }
 
   async listTree(rootPath: string): Promise<FileNode[]> {

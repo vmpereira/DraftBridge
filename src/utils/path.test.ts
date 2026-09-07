@@ -1,5 +1,5 @@
-﻿import { describe, it, expect } from 'vitest';
-import { normalizePath, getFilename, getBasename, getDirname, joinPath } from './path';
+import { describe, it, expect } from 'vitest';
+import { normalizePath, getFilename, getBasename, getDirname, joinPath, ensureMarkdownExtension } from './path';
 
 describe('path utils', () => {
   it('normalizes windows and unix paths', () => {
@@ -23,5 +23,11 @@ describe('path utils', () => {
   it('joins paths cleanly without redundant slashes', () => {
     expect(joinPath('notes', 'sub', 'doc.md')).toBe('notes/sub/doc.md');
     expect(joinPath('notes/', '/doc.md')).toBe('notes/doc.md');
+  });
+
+  it('ensures markdown extension properly', () => {
+    expect(ensureMarkdownExtension('note', false)).toBe('note.md');
+    expect(ensureMarkdownExtension('note.md', false)).toBe('note.md');
+    expect(ensureMarkdownExtension('my-folder', true)).toBe('my-folder');
   });
 });

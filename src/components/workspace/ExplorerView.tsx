@@ -12,9 +12,9 @@ import {
   FolderPlus,
 } from 'lucide-react';
 import { FileNode } from '@/types';
-import { joinPath, getDirname } from '@/utils/path';
+import { joinPath, getDirname, ensureMarkdownExtension } from '@/utils/path';
 
-export interface NodeOperations {
+export interface FileTreeOperations {
   onOpenNode: (path: string) => void;
   onRenameNode: (oldPath: string, newPath: string) => void;
   onDeleteNode: (path: string) => void;
@@ -24,7 +24,7 @@ interface ExplorerViewProps {
   workspacePath: string | null;
   fileTree: FileNode[];
   activeFilePath?: string;
-  operations: NodeOperations;
+  operations: FileTreeOperations;
   onOpenFolderDialog: () => void;
   onCreateNote: () => void;
   onCreateFolder?: () => void;
@@ -34,7 +34,7 @@ interface TreeNodeProps {
   node: FileNode;
   depth: number;
   activeFilePath?: string;
-  operations: NodeOperations;
+  operations: FileTreeOperations;
 }
 
 const TreeNode: React.FC<TreeNodeProps> = ({
@@ -52,7 +52,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
     if (!newName || newName === currentName) return;
 
     const parentDir = getDirname(node.path);
-    const finalName = newName.endsWith('.md') || node.isDirectory ? newName : `${newName}.md`;
+    const finalName = ensureMarkdownExtension(newName.trim(), node.isDirectory);
     const newPath = joinPath(parentDir, finalName);
     operations.onRenameNode(node.path, newPath);
   };

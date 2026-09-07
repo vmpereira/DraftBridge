@@ -22,6 +22,9 @@ export class WikiLinkResolver {
         path: normalizedPath,
         tags: parsed.tags,
         links: parsed.links,
+        normalizedTitle: title.toLowerCase(),
+        normalizedFilename: filename.toLowerCase(),
+        parentDir: getDirname(normalizedPath),
       });
     }
   }
@@ -34,7 +37,7 @@ export class WikiLinkResolver {
     const results: Array<{ title: string; path: string }> = [];
 
     for (const entry of this.entries.values()) {
-      if (!q || entry.title.toLowerCase().includes(q) || entry.path.toLowerCase().includes(q)) {
+      if (!q || entry.normalizedTitle.includes(q) || entry.path.toLowerCase().includes(q)) {
         results.push({ title: entry.title, path: entry.path });
       }
     }
@@ -54,11 +57,12 @@ export class WikiLinkResolver {
       const siblingPath = parent ? `${parent}/${target}.md`.toLowerCase() : `${target}.md`.toLowerCase();
       for (const entry of this.entries.values()) {
         const normEntryPath = entry.path.toLowerCase();
-        const entryParent = getDirname(entry.path);
-        const filename = entry.path.split('/').pop()?.replace(/\.md$/i, '').toLowerCase();
-        const title = entry.title.toLowerCase();
 
-        if (normEntryPath === siblingPath || (entryParent === parent && (title === target || filename === target))) {
+        if (
+          normEntryPath === siblingPath ||
+          (entry.parentDir === parent &&
+            (entry.normalizedTitle === target || entry.normalizedFilename === target))
+        ) {
           return { status: 'exists', targetPath: entry.path };
         }
       }
@@ -66,10 +70,11 @@ export class WikiLinkResolver {
 
     // Check by exact path, title, or filename across workspace
     for (const entry of this.entries.values()) {
-      const filename = entry.path.split('/').pop()?.replace(/\.md$/i, '').toLowerCase();
-      const title = entry.title.toLowerCase();
-
-      if (title === target || filename === target || entry.path.toLowerCase() === target) {
+      if (
+        entry.normalizedTitle === target ||
+        entry.normalizedFilename === target ||
+        entry.path.toLowerCase() === target
+      ) {
         return { status: 'exists', targetPath: entry.path };
       }
     }

@@ -25,3 +25,8 @@ export function joinPath(...parts: string[]): string {
     .filter(Boolean)
     .join('/');
 }
+
+export function ensureMarkdownExtension(name: string, isDirectory: boolean): string {
+  if (isDirectory) return name;
+  return name.endsWith('.md') || name.endsWith('.markdown') ? name : `${name}.md`;
+}

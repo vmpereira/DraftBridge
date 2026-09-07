@@ -63,6 +63,24 @@ describe('InMemoryFsAdapter', () => {
     const content = await fs.readFile('notes/welcome.md');
     expect(content).toBe('# Root Welcome');
   });
+
+  it('cascades folder rename and delete to nested files and subfolders', async () => {
+    const fs = new InMemoryFsAdapter({
+      'vault/folder/nested.md': '# Nested Note',
+      'vault/folder/sub/deep.md': '# Deep Note',
+    });
+
+    // Rename folder
+    await fs.renameFile('vault/folder', 'vault/archive');
+    expect(await fs.readFile('vault/archive/nested.md')).toBe('# Nested Note');
+    expect(await fs.readFile('vault/archive/sub/deep.md')).toBe('# Deep Note');
+    await expect(fs.readFile('vault/folder/nested.md')).rejects.toThrow('File not found');
+
+    // Delete renamed folder
+    await fs.deleteFile('vault/archive');
+    await expect(fs.readFile('vault/archive/nested.md')).rejects.toThrow('File not found');
+    await expect(fs.readFile('vault/archive/sub/deep.md')).rejects.toThrow('File not found');
+  });
 });
 
 

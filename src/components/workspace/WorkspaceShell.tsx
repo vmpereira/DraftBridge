@@ -21,7 +21,7 @@ import { DraftEditor } from '@/components/editor/DraftEditor';
 import { FileNode, OpenTab } from '@/types';
 import { normalizePath, getFilename, getBasename, getDirname, joinPath } from '@/utils/path';
 import { TabBar } from './TabBar';
-import { ExplorerView, NodeOperations } from './ExplorerView';
+import { ExplorerView, FileTreeOperations } from './ExplorerView';
 import { SearchPanel } from './SearchPanel';
 import { TagsPanel } from './TagsPanel';
 import { QuickOpenModal } from './QuickOpenModal';
@@ -87,12 +87,17 @@ Try adding your own notes in the sidebar.
 
   const activeTab = activeTabIdx >= 0 ? tabs[activeTabIdx] : null;
 
+  // Effective path to watch and index (workspace folder or active single file's parent directory)
+  const effectiveWatchPath = workspacePath || (activeTab ? getDirname(activeTab.path) : null);
+
   // Refresh file tree & update resolver index
   const refreshWorkspace = useCallback(async () => {
-    if (!workspacePath) return;
+    if (!effectiveWatchPath) return;
     try {
-      const tree = await storage.listTree(workspacePath);
-      setFileTree(tree);
+      const tree = await storage.listTree(effectiveWatchPath);
+      if (workspacePath) {
+        setFileTree(tree);
+      }
 
       const collected: Array<{ path: string; rawContent: string }> = [];
       const traverse = async (nodes: FileNode[]) => {
@@ -112,14 +117,14 @@ Try adding your own notes in the sidebar.
     } catch (err) {
       console.error('Failed to list workspace tree', err);
     }
-  }, [storage, workspacePath, resolver]);
+  }, [storage, effectiveWatchPath, workspacePath, resolver]);
 
-  // Initial load
+  // Initial load & single file change trigger
   useEffect(() => {
-    if (workspacePath) {
+    if (effectiveWatchPath) {
       refreshWorkspace();
     }
-    if (typeof window !== 'undefined' && !window.electronAPI) {
+    if (typeof window !== 'undefined' && !window.electronAPI && tabs.length === 0) {
       const loadDefault = async () => {
         try {
           const raw = await storage.readFile('notes/Welcome.md');
@@ -138,12 +143,12 @@ Try adding your own notes in the sidebar.
       };
       loadDefault();
     }
-  }, [refreshWorkspace, storage, workspacePath]);
+  }, [refreshWorkspace, storage, effectiveWatchPath, tabs.length]);
 
-  // Live external file watching
+  // Live external file watching (workspace folder or active file/directory in single file mode)
   useEffect(() => {
-    if (!workspacePath) return;
-    const unsubscribe = storage.watch(workspacePath, async (changedPath) => {
+    if (!effectiveWatchPath) return;
+    const unsubscribe = storage.watch(effectiveWatchPath, async (changedPath) => {
       await refreshWorkspace();
       if (activeTab && normalizePath(activeTab.path) === normalizePath(changedPath) && !activeTab.isDirty) {
         try {
@@ -163,7 +168,7 @@ Try adding your own notes in the sidebar.
     return () => {
       unsubscribe();
     };
-  }, [workspacePath, storage, refreshWorkspace, activeTab, activeTabIdx]);
+  }, [effectiveWatchPath, storage, refreshWorkspace, activeTab, activeTabIdx]);
 
   // Open note in tab
   const openNote = async (filePath: string) => {
@@ -323,31 +328,49 @@ Try adding your own notes in the sidebar.
     }
   };
 
-  // Rename file
+  // Rename file or folder (cascading to open tabs)
   const handleRenameFile = async (oldPath: string, newPath: string) => {
     try {
       await storage.renameFile(oldPath, newPath);
+      const normOld = normalizePath(oldPath);
+      const normNew = normalizePath(newPath);
+      const oldPrefix = `${normOld}/`;
+
       setTabs((prev) =>
-        prev.map((t) =>
-          normalizePath(t.path) === normalizePath(oldPath)
-            ? { ...t, path: newPath, name: getFilename(newPath) }
-            : t
-        )
+        prev.map((t) => {
+          const normTabPath = normalizePath(t.path);
+          if (normTabPath === normOld) {
+            return { ...t, path: newPath, name: getFilename(newPath) };
+          }
+          if (normTabPath.startsWith(oldPrefix)) {
+            const updated = `${normNew}/${normTabPath.slice(oldPrefix.length)}`;
+            return { ...t, path: updated, name: getFilename(updated) };
+          }
+          return t;
+        })
       );
       await refreshWorkspace();
     } catch (err) {
-      alert(`Could not rename file: ${err}`);
+      alert(`Could not rename: ${err}`);
     }
   };
 
-  // Delete file
+  // Delete file or folder (cascading to open tabs)
   const handleDeleteFile = async (filePath: string) => {
     try {
       await storage.deleteFile(filePath);
-      setTabs((prev) => prev.filter((t) => normalizePath(t.path) !== normalizePath(filePath)));
+      const normTarget = normalizePath(filePath);
+      const targetPrefix = `${normTarget}/`;
+
+      setTabs((prev) =>
+        prev.filter((t) => {
+          const normTabPath = normalizePath(t.path);
+          return normTabPath !== normTarget && !normTabPath.startsWith(targetPrefix);
+        })
+      );
       await refreshWorkspace();
     } catch (err) {
-      alert(`Could not delete file: ${err}`);
+      alert(`Could not delete: ${err}`);
     }
   };
 

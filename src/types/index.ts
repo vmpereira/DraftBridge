@@ -21,6 +21,9 @@ export interface NoteIndexEntry {
   path: string;
   tags: string[];
   links: string[];
+  normalizedTitle: string;
+  normalizedFilename: string;
+  parentDir: string;
 }
 
 export interface OpenTab {
