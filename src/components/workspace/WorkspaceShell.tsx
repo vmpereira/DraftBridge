@@ -25,6 +25,7 @@ import { ExplorerView, FileTreeOperations } from './ExplorerView';
 import { SearchPanel } from './SearchPanel';
 import { TagsPanel } from './TagsPanel';
 import { QuickOpenModal } from './QuickOpenModal';
+import { useWorkspaceOperations } from '@/hooks/useWorkspaceOperations';
 
 export const WorkspaceShell: React.FC = () => {
   // Storage adapter initialization
@@ -281,98 +282,20 @@ Try adding your own notes in the sidebar.
     }
   };
 
-  // Create new note
-  const handleCreateNote = async () => {
-    let targetFolder = workspacePath;
-    if (!targetFolder) {
-      const picked = await storage.openDialog('folder');
-      if (!picked) return;
-      targetFolder = picked;
-      setWorkspacePath(picked);
-    }
-
-    const title = prompt('Enter note name:');
-    if (!title) return;
-    const cleanTitle = getBasename(title);
-    const filename = `${cleanTitle}.md`;
-    const fullPath = joinPath(targetFolder, filename);
-
-    const initialContent = NoteCodec.encode({ title: cleanTitle, tags: [] }, `# ${cleanTitle}\n\n`);
-    try {
-      await storage.createFile(fullPath, initialContent);
-      await refreshWorkspace();
-      await openNote(fullPath);
-    } catch (err) {
-      alert(`Could not create file: ${err}`);
-    }
-  };
-
-  // Create new folder
-  const handleCreateFolder = async () => {
-    let targetFolder = workspacePath;
-    if (!targetFolder) {
-      const picked = await storage.openDialog('folder');
-      if (!picked) return;
-      targetFolder = picked;
-      setWorkspacePath(picked);
-    }
-
-    const folderName = prompt('Enter folder name:');
-    if (!folderName) return;
-    const fullPath = joinPath(targetFolder, folderName.trim());
-    try {
-      await storage.createFolder(fullPath);
-      await refreshWorkspace();
-    } catch (err) {
-      alert(`Could not create folder: ${err}`);
-    }
-  };
-
-  // Rename file or folder (cascading to open tabs)
-  const handleRenameFile = async (oldPath: string, newPath: string) => {
-    try {
-      await storage.renameFile(oldPath, newPath);
-      const normOld = normalizePath(oldPath);
-      const normNew = normalizePath(newPath);
-      const oldPrefix = `${normOld}/`;
-
-      setTabs((prev) =>
-        prev.map((t) => {
-          const normTabPath = normalizePath(t.path);
-          if (normTabPath === normOld) {
-            return { ...t, path: newPath, name: getFilename(newPath) };
-          }
-          if (normTabPath.startsWith(oldPrefix)) {
-            const updated = `${normNew}/${normTabPath.slice(oldPrefix.length)}`;
-            return { ...t, path: updated, name: getFilename(updated) };
-          }
-          return t;
-        })
-      );
-      await refreshWorkspace();
-    } catch (err) {
-      alert(`Could not rename: ${err}`);
-    }
-  };
-
-  // Delete file or folder (cascading to open tabs)
-  const handleDeleteFile = async (filePath: string) => {
-    try {
-      await storage.deleteFile(filePath);
-      const normTarget = normalizePath(filePath);
-      const targetPrefix = `${normTarget}/`;
-
-      setTabs((prev) =>
-        prev.filter((t) => {
-          const normTabPath = normalizePath(t.path);
-          return normTabPath !== normTarget && !normTabPath.startsWith(targetPrefix);
-        })
-      );
-      await refreshWorkspace();
-    } catch (err) {
-      alert(`Could not delete: ${err}`);
-    }
-  };
+  // Filesystem CRUD operations hook
+  const {
+    handleCreateNote,
+    handleCreateFolder,
+    handleRenameFile,
+    handleDeleteFile,
+  } = useWorkspaceOperations({
+    storage,
+    workspacePath,
+    setWorkspacePath,
+    setTabs,
+    refreshWorkspace,
+    openNote,
+  });
 
   // Handle clicking a [[wiki-link]]
   const handleWikiLinkClick = async (target: string) => {
